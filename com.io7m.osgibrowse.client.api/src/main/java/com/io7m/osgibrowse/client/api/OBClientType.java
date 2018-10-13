@@ -1,38 +1,51 @@
 package com.io7m.osgibrowse.client.api;
 
 import io.reactivex.Observable;
+import io.vavr.collection.SortedMap;
+import io.vavr.collection.SortedSet;
+import io.vavr.collection.Vector;
 import org.osgi.resource.Resource;
 import org.osgi.service.repository.Repository;
 
 import java.io.Closeable;
 import java.net.URI;
-import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.CompletableFuture;
 
 public interface OBClientType extends Closeable
 {
   Observable<OBClientEventType> events();
 
-  CompletableFuture<Void> repositoryAdd(
+  void repositoryAdd(
     URI uri,
-    Repository repository);
+    Repository repository)
+    throws OBExceptionRepositoryFailed;
 
-  default CompletableFuture<Void> repositoryAdd(
-    final OBRepositoryType repository)
+  default void repositoryAdd(
+    final OBRepositoryInputType repository)
+    throws OBExceptionRepositoryFailed
   {
     Objects.requireNonNull(repository, "repository");
-    return this.repositoryAdd(repository.uri(), repository.repository());
+    this.repositoryAdd(repository.uri(), repository.repository());
   }
 
-  CompletableFuture<Void> repositoryRemove(
+  void repositoryRemove(
     URI uri);
 
-  CompletableFuture<Void> bundleSelect(
-    OBBundleIdentifier bundle);
+  SortedMap<URI, OBRepositoryType> repositoryList();
 
-  CompletableFuture<Boolean> bundleIsSelected(
-    OBBundleIdentifier bundle);
+  void bundleSelectToggle(
+    OBBundleIdentifier bundle)
+    throws OBExceptionBundleNotFound;
 
-  CompletableFuture<List<Resource>> bundlesResolved();
+  default boolean bundleIsSelected(
+    final OBBundleIdentifier bundle)
+  {
+    Objects.requireNonNull(bundle, "bundle");
+    return this.bundlesSelected().contains(bundle);
+  }
+
+  SortedSet<OBBundleIdentifier> bundlesSelected();
+
+  Vector<Resource> bundlesResolved()
+    throws OBExceptionResolutionFailed;
 }

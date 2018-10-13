@@ -2,9 +2,9 @@ package com.io7m.osgibrowse.client.bnd;
 
 import aQute.bnd.osgi.repository.ResourcesRepository;
 import aQute.bnd.osgi.repository.XMLResourceParser;
-import com.io7m.osgibrowse.client.api.OBRepository;
+import com.io7m.osgibrowse.client.api.OBRepositoryInput;
+import com.io7m.osgibrowse.client.api.OBRepositoryInputType;
 import com.io7m.osgibrowse.client.api.OBRepositoryLoaderType;
-import com.io7m.osgibrowse.client.api.OBRepositoryType;
 import org.osgi.resource.Resource;
 import org.osgi.service.repository.Repository;
 
@@ -28,9 +28,9 @@ public final class OBXMLRepositories implements OBRepositoryLoaderType
   }
 
   @Override
-  public CompletableFuture<OBRepositoryType> load()
+  public CompletableFuture<OBRepositoryInputType> load()
   {
-    final CompletableFuture<OBRepositoryType> future = new CompletableFuture<>();
+    final CompletableFuture<OBRepositoryInputType> future = new CompletableFuture<>();
     this.exec.execute(() -> {
       try {
         future.complete(fromURI(this.uri));
@@ -51,14 +51,14 @@ public final class OBXMLRepositories implements OBRepositoryLoaderType
    * @throws Exception On errors
    */
 
-  public static OBRepositoryType fromURI(final URI uri)
+  public static OBRepositoryInputType fromURI(final URI uri)
     throws Exception
   {
     Objects.requireNonNull(uri, "uri");
 
     final List<Resource> resources = XMLResourceParser.getResources(uri);
     final Repository repository = new ResourcesRepository(resources);
-    return OBRepository.builder()
+    return OBRepositoryInput.builder()
       .setUri(uri)
       .setRepository(repository)
       .build();

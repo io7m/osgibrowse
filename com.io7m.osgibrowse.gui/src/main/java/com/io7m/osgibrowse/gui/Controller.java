@@ -1,5 +1,6 @@
 package com.io7m.osgibrowse.gui;
 
+import aQute.lib.promise.PromiseCollectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

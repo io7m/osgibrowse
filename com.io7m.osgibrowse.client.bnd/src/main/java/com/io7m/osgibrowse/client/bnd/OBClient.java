@@ -1,98 +1,62 @@
 package com.io7m.osgibrowse.client.bnd;
 
 import aQute.bnd.build.model.EE;
-import aQute.bnd.service.resolve.hook.ResolverHook;
 import aQute.bnd.version.VersionRange;
 import biz.aQute.resolve.BndResolver;
 import biz.aQute.resolve.GenericResolveContext;
-import biz.aQute.resolve.ResolverLogger;
 import com.io7m.jaffirm.core.Invariants;
 import com.io7m.osgibrowse.client.api.OBBundleIdentifier;
+import com.io7m.osgibrowse.client.api.OBClientEventBundleDeselected;
+import com.io7m.osgibrowse.client.api.OBClientEventBundleSelected;
 import com.io7m.osgibrowse.client.api.OBClientEventRepositoryAdded;
 import com.io7m.osgibrowse.client.api.OBClientEventRepositoryRemoved;
 import com.io7m.osgibrowse.client.api.OBClientEventType;
 import com.io7m.osgibrowse.client.api.OBClientType;
 import com.io7m.osgibrowse.client.api.OBExceptionBundleNotFound;
+import com.io7m.osgibrowse.client.api.OBExceptionRepositoryFailed;
+import com.io7m.osgibrowse.client.api.OBExceptionResolutionFailed;
+import com.io7m.osgibrowse.client.api.OBRepositoryType;
 import io.reactivex.Observable;
 import io.reactivex.subjects.BehaviorSubject;
+import io.vavr.Tuple;
+import io.vavr.collection.SortedMap;
+import io.vavr.collection.SortedSet;
+import io.vavr.collection.Stream;
+import io.vavr.collection.TreeMap;
+import io.vavr.collection.TreeSet;
+import io.vavr.collection.Vector;
 import org.osgi.framework.Version;
 import org.osgi.resource.Capability;
 import org.osgi.resource.Resource;
-import org.osgi.resource.Wire;
 import org.osgi.service.repository.IdentityExpression;
 import org.osgi.service.repository.Repository;
-import org.osgi.service.resolver.ResolutionException;
-import org.osgi.service.resolver.ResolveContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.Callable;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 final class OBClient implements OBClientType
 {
   private static final Logger LOG = LoggerFactory.getLogger(OBClient.class);
 
-  private final HashMap<URI, RepositoryWithBundles> repositories;
+  private TreeMap<URI, RepositoryWithBundles> repositories;
   private final BndResolver resolver;
   private final BehaviorSubject<OBClientEventType> subject;
-  private final ExecutorService executor;
-  private final HashSet<OBBundleIdentifier> selected;
+  private TreeSet<OBBundleIdentifier> selected;
+  private final AtomicBoolean closed;
 
   OBClient()
   {
-    this.executor = Executors.newFixedThreadPool(1, runnable -> {
-      final Thread thread = new Thread(runnable);
-      thread.setName("com.io7m.osgibrowse.client.bnd.OBClient." + thread.getId());
-      return thread;
-    });
-    this.repositories = new HashMap<>(128);
-    this.selected = new HashSet<>(128);
+    this.repositories = TreeMap.empty();
+    this.selected = TreeSet.empty();
     this.resolver = new BndResolver(new OBResolverLogger(LOG));
     this.subject = BehaviorSubject.create();
-  }
-
-  @Override
-  public Observable<OBClientEventType> events()
-  {
-    return this.subject;
-  }
-
-  private Void opRepositoryAdd(
-    final URI uri,
-    final Repository repository)
-    throws Exception
-  {
-    final IdentityExpression req =
-      repository.newRequirementBuilder("osgi.identity")
-        .buildExpression();
-
-    final Collection<Resource> results =
-      repository.findProviders(req)
-        .getValue();
-
-    final HashMap<OBBundleIdentifier, Resource> bundles = new HashMap<>(results.size());
-    for (final Resource resource : results) {
-      bundles.put(makeBundleIdentifierForResource(uri, resource), resource);
-    }
-
-    final RepositoryWithBundles processed_repository =
-      new RepositoryWithBundles(repository, Collections.unmodifiableMap(bundles));
-
-    this.repositories.put(uri, processed_repository);
-    this.subject.onNext(OBClientEventRepositoryAdded.of(uri));
-    return null;
+    this.closed = new AtomicBoolean(false);
   }
 
   private static OBBundleIdentifier makeBundleIdentifierForResource(
@@ -132,10 +96,52 @@ final class OBClient implements OBClientType
       .build();
   }
 
-  private Void opBundleSelect(
+  @Override
+  public Observable<OBClientEventType> events()
+  {
+    return this.subject;
+  }
+
+  private void opRepositoryAdd(
+    final URI uri,
+    final Repository repository)
+    throws OBExceptionRepositoryFailed
+  {
+    final IdentityExpression req =
+      repository.newRequirementBuilder("osgi.identity")
+        .addAttribute("type", "bundle")
+        .buildExpression();
+
+    final SortedMap<OBBundleIdentifier, Resource> bundles;
+    try {
+      bundles =
+        Stream.ofAll(repository.findProviders(req).getValue())
+          .toSortedMap(resource ->
+                         Tuple.of(makeBundleIdentifierForResource(uri, resource), resource));
+    } catch (final InvocationTargetException | InterruptedException e) {
+      throw new OBExceptionRepositoryFailed(e);
+    }
+
+    if (LOG.isDebugEnabled()) {
+      LOG.debug("repository has {} bundles", Integer.valueOf(bundles.size()));
+    }
+
+    final RepositoryWithBundles processed_repository =
+      new RepositoryWithBundles(uri, repository, bundles);
+
+    this.repositories = this.repositories.put(uri, processed_repository);
+    this.subject.onNext(OBClientEventRepositoryAdded.of(uri));
+  }
+
+  private void opBundleSelectToggle(
     final OBBundleIdentifier bundle)
     throws OBExceptionBundleNotFound
   {
+    if (this.opBundleDeselect(bundle)) {
+      this.subject.onNext(OBClientEventBundleDeselected.of(bundle));
+      return;
+    }
+
     boolean found = false;
     for (final RepositoryWithBundles repository : this.repositories.values()) {
       if (repository.resources.containsKey(bundle)) {
@@ -148,121 +154,169 @@ final class OBClient implements OBClientType
       throw new OBExceptionBundleNotFound(bundle);
     }
 
-    this.selected.add(bundle);
-    return null;
+    this.selected = this.selected.add(bundle);
+    this.subject.onNext(OBClientEventBundleSelected.of(bundle));
   }
 
-  private Boolean opBundleIsSelected(
+  private boolean opBundleDeselect(
     final OBBundleIdentifier bundle)
   {
-    return Boolean.valueOf(this.selected.contains(bundle));
+    if (this.selected.contains(bundle)) {
+      this.selected = this.selected.remove(bundle);
+      return true;
+    }
+    return false;
   }
 
-  private Void opRepositoryRemove(
+  private boolean opBundleIsSelected(
+    final OBBundleIdentifier bundle)
+  {
+    return this.selected.contains(bundle);
+  }
+
+  private void opRepositoryRemove(
     final URI uri)
   {
     if (this.repositories.containsKey(uri)) {
-      this.repositories.remove(uri);
+      this.repositories = this.repositories.remove(uri);
       this.subject.onNext(OBClientEventRepositoryRemoved.of(uri));
     }
-    return null;
   }
 
-  private List<Resource> opBundlesResolved()
-    throws Exception
+  private Vector<Resource> opBundlesResolved()
+    throws OBExceptionResolutionFailed
   {
-    final GenericResolveContext context = new GenericResolveContext(new OBResolverLogger(LOG));
-    context.addEE(EE.JavaSE_9_0);
+    try {
+      final GenericResolveContext context = new GenericResolveContext(new OBResolverLogger(LOG));
+      context.addEE(EE.JavaSE_9_0);
 
-    for (final RepositoryWithBundles repository : this.repositories.values()) {
-      context.addRepository(repository.repository);
-    }
-
-    for (final OBBundleIdentifier identifier : this.selected) {
-      context.addRequireBundle(
-        identifier.name(),
-        new VersionRange(identifier.version().toString(),
-                         identifier.version().toString()));
-    }
-
-    context.addFramework("org.apache.felix.framework", null);
-    context.done();
-
-    final Map<Resource, List<Wire>> results = this.resolver.resolve(context);
-    return new ArrayList<>(results.keySet());
-  }
-
-  private <T> CompletableFuture<T> submit(
-    final Callable<T> callable)
-  {
-    final CompletableFuture<T> future = new CompletableFuture<>();
-    this.executor.execute(() -> {
-      try {
-        future.complete(callable.call());
-      } catch (final Throwable e) {
-        future.completeExceptionally(e);
+      for (final RepositoryWithBundles repository : this.repositories.values()) {
+        context.addRepository(repository.repository);
       }
-    });
-    return future;
+
+      for (final OBBundleIdentifier identifier : this.selected) {
+        final String version = identifier.version().toString();
+        context.addRequireBundle(identifier.name(), new VersionRange(version, version));
+      }
+
+      context.done();
+
+      return Vector.ofAll(this.resolver.resolve(context).keySet());
+    } catch (final Exception e) {
+      throw new OBExceptionResolutionFailed(e);
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <K, VBASE, VSUB extends VBASE> TreeMap<K, VBASE> castMap(
+    final TreeMap<K, VSUB> m)
+  {
+    return (TreeMap<K, VBASE>) m;
   }
 
   @Override
-  public CompletableFuture<Void> repositoryAdd(
+  public void repositoryAdd(
     final URI uri,
     final Repository repository)
+    throws OBExceptionRepositoryFailed
   {
     Objects.requireNonNull(uri, "uri");
     Objects.requireNonNull(repository, "repository");
-    return this.submit(() -> this.opRepositoryAdd(uri, repository));
+    this.checkNotClosed();
+    this.opRepositoryAdd(uri, repository);
   }
 
   @Override
-  public CompletableFuture<Void> repositoryRemove(
+  public void repositoryRemove(
     final URI uri)
   {
     Objects.requireNonNull(uri, "uri");
-    return this.submit(() -> this.opRepositoryRemove(uri));
+    this.checkNotClosed();
+    this.opRepositoryRemove(uri);
   }
 
   @Override
-  public CompletableFuture<Void> bundleSelect(
+  public SortedMap<URI, OBRepositoryType> repositoryList()
+  {
+    this.checkNotClosed();
+    return castMap(this.repositories);
+  }
+
+  @Override
+  public void bundleSelectToggle(
+    final OBBundleIdentifier bundle)
+    throws OBExceptionBundleNotFound
+  {
+    Objects.requireNonNull(bundle, "bundle");
+    this.checkNotClosed();
+    this.opBundleSelectToggle(bundle);
+  }
+
+  @Override
+  public boolean bundleIsSelected(
     final OBBundleIdentifier bundle)
   {
     Objects.requireNonNull(bundle, "bundle");
-    return this.submit(() -> this.opBundleSelect(bundle));
+    this.checkNotClosed();
+    return this.opBundleIsSelected(bundle);
   }
 
   @Override
-  public CompletableFuture<Boolean> bundleIsSelected(
-    final OBBundleIdentifier bundle)
+  public SortedSet<OBBundleIdentifier> bundlesSelected()
   {
-    Objects.requireNonNull(bundle, "bundle");
-    return this.submit(() -> this.opBundleIsSelected(bundle));
+    this.checkNotClosed();
+    return this.selected;
   }
 
   @Override
-  public CompletableFuture<List<Resource>> bundlesResolved()
+  public Vector<Resource> bundlesResolved()
+    throws OBExceptionResolutionFailed
   {
-    return this.submit(() -> this.opBundlesResolved());
+    this.checkNotClosed();
+    return this.opBundlesResolved();
+  }
+
+  private void checkNotClosed()
+  {
+    if (this.closed.get()) {
+      throw new IllegalStateException("Client has been closed");
+    }
   }
 
   @Override
   public void close()
   {
-    this.executor.shutdown();
+    if (this.closed.compareAndSet(false, true)) {
+      this.subject.onComplete();
+    }
   }
 
-  private static final class RepositoryWithBundles
+  private static final class RepositoryWithBundles implements OBRepositoryType
   {
     private final Repository repository;
-    private final Map<OBBundleIdentifier, Resource> resources;
+    private final SortedMap<OBBundleIdentifier, Resource> resources;
+    private final URI uri;
 
     private RepositoryWithBundles(
+      final URI in_uri,
       final Repository in_repository,
-      final Map<OBBundleIdentifier, Resource> in_resources)
+      final SortedMap<OBBundleIdentifier, Resource> in_resources)
     {
+      this.uri = Objects.requireNonNull(in_uri, "uri");
       this.repository = Objects.requireNonNull(in_repository, "repository");
       this.resources = Objects.requireNonNull(in_resources, "resources");
+    }
+
+    @Override
+    public URI uri()
+    {
+      return this.uri;
+    }
+
+    @Override
+    public SortedMap<OBBundleIdentifier, Resource> bundles()
+    {
+      return this.resources;
     }
   }
 }

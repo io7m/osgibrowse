@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<repository xmlns="http://www.osgi.org/xmlns/repository/v1.0.0" name="osgibrowse" increment="1538947073207">
+  <resource>
+    <capability namespace="osgi.identity">
+      <attribute name="osgi.identity" value="UNRESOLVABLE"/>
+      <attribute name="type" value="osgi.bundle"/>
+      <attribute name="version" value="1.0.0" type="Version"/>
+    </capability>
+    <requirement namespace="osgi.ee">
+      <directive name="filter"
+                 value="(osgi.identity=NONEXISTENT)"/>
+    </requirement>
+  </resource>
+</repository>

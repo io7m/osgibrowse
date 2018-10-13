@@ -4,5 +4,5 @@ import java.util.concurrent.CompletableFuture;
 
 public interface OBRepositoryLoaderType
 {
-  CompletableFuture<OBRepositoryType> load();
+  CompletableFuture<OBRepositoryInputType> load();
 }

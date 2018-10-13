@@ -7,26 +7,40 @@ import com.io7m.osgibrowse.client.api.OBClientEventType;
 import com.io7m.osgibrowse.client.api.OBClientProviderType;
 import com.io7m.osgibrowse.client.api.OBClientType;
 import com.io7m.osgibrowse.client.api.OBExceptionBundleNotFound;
-import com.io7m.osgibrowse.client.api.OBRepositoryType;
+import com.io7m.osgibrowse.client.api.OBExceptionRepositoryFailed;
+import com.io7m.osgibrowse.client.api.OBExceptionResolutionFailed;
+import com.io7m.osgibrowse.client.api.OBRepositoryInputType;
 import com.io7m.osgibrowse.client.bnd.OBXMLRepositories;
+import io.reactivex.Observer;
 import io.reactivex.disposables.Disposable;
+import io.vavr.collection.Vector;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.osgi.framework.Version;
 import org.osgi.resource.Capability;
 import org.osgi.resource.Resource;
+import org.osgi.service.repository.IdentityExpression;
+import org.osgi.service.repository.Repository;
+import org.osgi.service.repository.RequirementBuilder;
+import org.osgi.util.promise.Deferred;
+import org.osgi.util.promise.Promise;
 import org.slf4j.Logger;
 
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
-import java.util.concurrent.ExecutionException;
+import java.util.Map;
+import java.util.Objects;
+import java.util.stream.Collectors;
 
 import static org.osgi.framework.Version.parseVersion;
 
 public abstract class OBClientContract
 {
-  private static OBRepositoryType xmlRepository(
+  private static OBRepositoryInputType xmlRepository(
     final String name)
     throws Exception
   {
@@ -44,25 +58,121 @@ public abstract class OBClientContract
 
   protected abstract Logger logger();
 
+  private static final class LoggingEventReceiver implements Observer<OBClientEventType>
+  {
+    private final Logger logger;
+    private final ArrayList<OBClientEventType> events;
+    private final ArrayList<Throwable> errors;
+    private boolean complete;
+
+    LoggingEventReceiver(final Logger in_logger)
+    {
+      this.logger = Objects.requireNonNull(in_logger, "logger");
+      this.events = new ArrayList<>(128);
+      this.errors = new ArrayList<>(128);
+    }
+
+    @Override
+    public void onSubscribe(final Disposable d)
+    {
+
+    }
+
+    @Override
+    public void onNext(final OBClientEventType event)
+    {
+      this.events.add(event);
+    }
+
+    @Override
+    public void onError(final Throwable e)
+    {
+      this.errors.add(e);
+    }
+
+    @Override
+    public void onComplete()
+    {
+      this.complete = true;
+    }
+  }
+
   @Test
   public final void testRepositoryAddOK()
     throws Exception
   {
     final OBClientProviderType clients = this.clients();
+    final LoggingEventReceiver events = new LoggingEventReceiver(this.logger());
+
     try (OBClientType client = clients.createEmptyClient()) {
-      final ArrayList<OBClientEventType> events = new ArrayList<>();
-      final Disposable sub = client.events().subscribe(events::add);
+      client.events().subscribe(events);
 
-      final OBRepositoryType repos = xmlRepository("knoplerfish-6.1.0.xml");
+      final OBRepositoryInputType repos = xmlRepository("knoplerfish-6.1.0.xml");
 
-      client.repositoryAdd(repos)
-        .get();
+      client.repositoryAdd(repos);
 
-      Assertions.assertEquals(1, events.size());
+      Assertions.assertTrue(client.repositoryList().containsKey(repos.uri()));
+
+      Assertions.assertEquals(1, events.events.size());
       Assertions.assertEquals(
         OBClientEventRepositoryAdded.of(resourceURI("knoplerfish-6.1.0.xml")),
-        events.get(0));
+        events.events.get(0));
     }
+
+    Assertions.assertTrue(events.complete);
+  }
+
+  @Test
+  public final void testRepositoryCrash()
+    throws Exception
+  {
+    final OBClientProviderType clients = this.clients();
+    final LoggingEventReceiver events = new LoggingEventReceiver(this.logger());
+
+    try (OBClientType client = clients.createEmptyClient()) {
+      client.events().subscribe(events);
+
+      final IdentityExpression req =
+        Mockito.mock(IdentityExpression.class);
+
+      final RequirementBuilder req_builder =
+        Mockito.mock(RequirementBuilder.class);
+
+      Mockito.when(req_builder.buildExpression())
+        .thenReturn(req);
+      Mockito.when(req_builder.addAttribute(Mockito.anyString(), Mockito.any()))
+        .thenReturn(req_builder);
+
+      final Repository osgi_repos =
+        Mockito.mock(Repository.class);
+
+      Mockito.when(osgi_repos.newRequirementBuilder(Mockito.anyString()))
+        .thenReturn(req_builder);
+      Mockito.when(osgi_repos.findProviders(Mockito.<IdentityExpression>any()))
+        .thenReturn(crashingPromise());
+
+      final OBRepositoryInputType repos =
+        Mockito.mock(OBRepositoryInputType.class);
+
+      Mockito.when(repos.uri())
+        .thenReturn(URI.create("urn:example"));
+
+      Mockito.when(repos.repository())
+        .thenReturn(osgi_repos);
+
+      Assertions.assertThrows(OBExceptionRepositoryFailed.class, () -> {
+        client.repositoryAdd(repos);
+      });
+    }
+
+    Assertions.assertTrue(events.complete);
+  }
+
+  private static Promise<Collection<Resource>> crashingPromise()
+  {
+    final Deferred<Collection<Resource>> deferred = new Deferred<>();
+    deferred.fail(new IllegalStateException());
+    return deferred.getPromise();
   }
 
   @Test
@@ -70,24 +180,26 @@ public abstract class OBClientContract
     throws Exception
   {
     final OBClientProviderType clients = this.clients();
+    final LoggingEventReceiver events = new LoggingEventReceiver(this.logger());
+
     try (OBClientType client = clients.createEmptyClient()) {
-      final ArrayList<OBClientEventType> events = new ArrayList<>();
-      final Disposable sub = client.events().subscribe(events::add);
+      client.events().subscribe(events);
 
-      final OBRepositoryType repos = xmlRepository("knoplerfish-6.1.0.xml");
+      final OBRepositoryInputType repos = xmlRepository("knoplerfish-6.1.0.xml");
 
-      client.repositoryAdd(repos)
-        .thenCompose(ignored -> client.repositoryRemove(repos.uri()))
-        .get();
+      client.repositoryAdd(repos);
+      client.repositoryRemove(repos.uri());
 
-      Assertions.assertEquals(2, events.size());
+      Assertions.assertEquals(2, events.events.size());
       Assertions.assertEquals(
         OBClientEventRepositoryAdded.of(resourceURI("knoplerfish-6.1.0.xml")),
-        events.get(0));
+        events.events.get(0));
       Assertions.assertEquals(
         OBClientEventRepositoryRemoved.of(resourceURI("knoplerfish-6.1.0.xml")),
-        events.get(1));
+        events.events.get(1));
     }
+
+    Assertions.assertTrue(events.complete);
   }
 
   @Test
@@ -95,23 +207,24 @@ public abstract class OBClientContract
     throws Exception
   {
     final OBClientProviderType clients = this.clients();
-    try (OBClientType client = clients.createEmptyClient()) {
-      final ArrayList<OBClientEventType> events = new ArrayList<>();
-      final Disposable sub = client.events().subscribe(events::add);
+    final LoggingEventReceiver events = new LoggingEventReceiver(this.logger());
 
-      final OBRepositoryType repos = xmlRepository("knoplerfish-6.1.0.xml");
+    try (OBClientType client = clients.createEmptyClient()) {
+      client.events().subscribe(events);
+
+      final OBRepositoryInputType repos = xmlRepository("knoplerfish-6.1.0.xml");
 
       final OBBundleIdentifier bundle =
         OBBundleIdentifier.of("org.knopflerfish.bundle.desktop", parseVersion("6.0.0"));
 
-      final Boolean result =
-        client.repositoryAdd(repos)
-          .thenRun(() -> client.bundleSelect(bundle))
-          .thenCompose(ignored -> client.bundleIsSelected(bundle))
-          .get();
+      client.repositoryAdd(repos);
+      client.bundleSelectToggle(bundle);
 
-      Assertions.assertTrue(result.booleanValue(), "Bundle is selected");
+      Assertions.assertTrue(client.bundleIsSelected(bundle), "Bundle is selected");
+      Assertions.assertTrue(client.bundlesSelected().contains(bundle), "Bundle is selected");
     }
+
+    Assertions.assertTrue(events.complete);
   }
 
   @Test
@@ -119,20 +232,20 @@ public abstract class OBClientContract
     throws Exception
   {
     final OBClientProviderType clients = this.clients();
+    final LoggingEventReceiver events = new LoggingEventReceiver(this.logger());
+
     try (OBClientType client = clients.createEmptyClient()) {
-      final ArrayList<OBClientEventType> events = new ArrayList<>();
-      final Disposable sub = client.events().subscribe(events::add);
+      client.events().subscribe(events);
+
       final OBBundleIdentifier bundle =
         OBBundleIdentifier.of("x.y.z", parseVersion("1.0.0"));
 
       Assertions.assertThrows(OBExceptionBundleNotFound.class, () -> {
-        try {
-          client.bundleSelect(bundle).get();
-        } catch (final ExecutionException e) {
-          throw (OBExceptionBundleNotFound) e.getCause();
-        }
+        client.bundleSelectToggle(bundle);
       });
     }
+
+    Assertions.assertTrue(events.complete);
   }
 
   @Test
@@ -140,27 +253,27 @@ public abstract class OBClientContract
     throws Exception
   {
     final OBClientProviderType clients = this.clients();
+    final LoggingEventReceiver events = new LoggingEventReceiver(this.logger());
+
     try (OBClientType client = clients.createEmptyClient()) {
-      final ArrayList<OBClientEventType> events = new ArrayList<>();
-      final Disposable sub = client.events().subscribe(events::add);
+      client.events().subscribe(events);
 
       final OBBundleIdentifier bundle =
         OBBundleIdentifier.of("org.knopflerfish.bundle.desktop", parseVersion("6.0.0"));
 
-      final OBRepositoryType repos = xmlRepository("knoplerfish-6.1.0.xml");
+      final OBRepositoryInputType repos = xmlRepository("knoplerfish-6.1.0.xml");
+
+      client.repositoryAdd(repos);
+      client.bundleSelectToggle(bundle);
+      client.bundleSelectToggle(bundle);
+      client.repositoryRemove(repos.uri());
 
       Assertions.assertThrows(OBExceptionBundleNotFound.class, () -> {
-        try {
-          client.repositoryAdd(repos)
-            .thenCompose(ignored -> client.bundleSelect(bundle))
-            .thenCompose(ignored -> client.repositoryRemove(repos.uri()))
-            .thenCompose(ignored -> client.bundleSelect(bundle))
-            .get();
-        } catch (final ExecutionException e) {
-          throw (OBExceptionBundleNotFound) e.getCause();
-        }
+        client.bundleSelectToggle(bundle);
       });
     }
+
+    Assertions.assertTrue(events.complete);
   }
 
   @Test
@@ -168,17 +281,17 @@ public abstract class OBClientContract
     throws Exception
   {
     final OBClientProviderType clients = this.clients();
+    final LoggingEventReceiver events = new LoggingEventReceiver(this.logger());
+
     try (OBClientType client = clients.createEmptyClient()) {
-      final ArrayList<OBClientEventType> events = new ArrayList<>();
-      final Disposable sub = client.events().subscribe(events::add);
+      client.events().subscribe(events);
 
-      final List<Resource> result =
-        client.bundlesResolved()
-          .get();
-
+      final Vector<Resource> result = client.bundlesResolved();
       Assertions.assertEquals(1, result.size());
       Assertions.assertEquals(0, result.get(0).getCapabilities("osgi.identity").size());
     }
+
+    Assertions.assertTrue(events.complete);
   }
 
   @Test
@@ -186,26 +299,75 @@ public abstract class OBClientContract
     throws Exception
   {
     final OBClientProviderType clients = this.clients();
+    final LoggingEventReceiver events = new LoggingEventReceiver(this.logger());
+
     try (OBClientType client = clients.createEmptyClient()) {
-      final ArrayList<OBClientEventType> events = new ArrayList<>();
-      final Disposable sub = client.events().subscribe(events::add);
+      client.events().subscribe(events);
 
       final OBBundleIdentifier bundle =
-        OBBundleIdentifier.of("org.knopflerfish.bundle.commons-logging", parseVersion("2.0.0.kf4-001"));
+        OBBundleIdentifier.of(
+          "org.knopflerfish.bundle.commons-logging",
+          parseVersion("2.0.0.kf4-001"));
 
-      final OBRepositoryType repos = xmlRepository("knoplerfish-6.1.0.xml");
+      final OBRepositoryInputType repos = xmlRepository("knoplerfish-6.1.0.xml");
+      final OBRepositoryInputType felix = xmlRepository("felix.xml");
 
-      final List<Resource> result =
-        client.repositoryAdd(repos)
-          .thenCompose(ignored -> client.bundleSelect(bundle))
-          .thenCompose(ignored -> client.bundlesResolved())
-          .get();
+      client.repositoryAdd(repos);
+      client.repositoryAdd(felix);
+      client.bundleSelectToggle(bundle);
 
-      for (final Resource resource : result) {
-        for (final Capability capability : resource.getCapabilities("osgi.identity")) {
-          this.logger().debug("capability: {}", capability);
-        }
-      }
+      final Vector<Resource> result = client.bundlesResolved();
+
+      final List<Resource> bundles =
+        result.filter(r -> r.getCapabilities("osgi.identity")
+          .stream()
+          .anyMatch(c -> capabilityIsBundle(c, bundle)))
+          .collect(Collectors.toList());
+
+      Assertions.assertEquals(1, bundles.size());
     }
+
+    Assertions.assertTrue(events.complete);
+  }
+
+  @Test
+  public final void testBundleResolveFailure()
+    throws Exception
+  {
+    final OBClientProviderType clients = this.clients();
+    final LoggingEventReceiver events = new LoggingEventReceiver(this.logger());
+
+    try (OBClientType client = clients.createEmptyClient()) {
+      client.events().subscribe(events);
+
+      final OBBundleIdentifier bundle =
+        OBBundleIdentifier.of(
+          "UNRESOLVABLE",
+          parseVersion("1.0.0"));
+
+      final OBRepositoryInputType repos = xmlRepository("knoplerfish-6.1.0.xml");
+      final OBRepositoryInputType felix = xmlRepository("felix.xml");
+      final OBRepositoryInputType unresolvable = xmlRepository("unresolvable.xml");
+
+      client.repositoryAdd(repos);
+      client.repositoryAdd(felix);
+      client.repositoryAdd(unresolvable);
+      client.bundleSelectToggle(bundle);
+
+      Assertions.assertThrows(OBExceptionResolutionFailed.class, client::bundlesResolved);
+    }
+
+    Assertions.assertTrue(events.complete);
+  }
+
+  private static boolean capabilityIsBundle(
+    final Capability capability,
+    final OBBundleIdentifier bundle)
+  {
+    final Map<String, Object> attr = capability.getAttributes();
+    final String identity = (String) attr.get("osgi.identity");
+    final Version version = (Version) attr.get("version");
+    return Objects.equals(bundle.name(), identity)
+      && Objects.equals(bundle.version(), version);
   }
 }
