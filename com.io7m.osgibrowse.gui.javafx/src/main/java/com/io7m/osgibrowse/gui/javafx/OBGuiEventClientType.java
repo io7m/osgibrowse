@@ -1,7 +1,6 @@
 package com.io7m.osgibrowse.gui.javafx;
 
 import com.io7m.immutables.styles.ImmutablesStyleType;
-import com.io7m.junreachable.UnreachableCodeException;
 import com.io7m.osgibrowse.client.api.OBClientEventType;
 import org.immutables.value.Value;
 

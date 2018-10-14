@@ -3,9 +3,6 @@ package com.io7m.osgibrowse.gui.javafx;
 import com.io7m.immutables.styles.ImmutablesStyleType;
 import org.immutables.value.Value;
 
-import java.net.URI;
-import java.util.Objects;
-
 @ImmutablesStyleType
 @Value.Immutable
 public interface OBGuiEventRepositoryAddingType extends OBGuiEventType
