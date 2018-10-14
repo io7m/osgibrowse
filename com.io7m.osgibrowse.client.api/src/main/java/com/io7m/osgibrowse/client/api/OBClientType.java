@@ -16,6 +16,14 @@ public interface OBClientType extends Closeable
   Observable<OBClientEventType> events();
 
   void repositoryAdd(
+    String uri)
+    throws OBExceptionRepositoryFailed;
+
+  void repositoryAdd(
+    URI uri)
+    throws OBExceptionRepositoryFailed;
+
+  void repositoryAdd(
     URI uri,
     Repository repository)
     throws OBExceptionRepositoryFailed;

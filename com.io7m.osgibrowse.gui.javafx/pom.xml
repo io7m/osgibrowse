@@ -11,30 +11,32 @@
     <version>0.0.1</version>
   </parent>
 
-  <artifactId>com.io7m.osgibrowse.gui</artifactId>
+  <artifactId>com.io7m.osgibrowse.gui.javafx</artifactId>
 
-  <name>com.io7m.osgibrowse.gui</name>
-  <description>OSGi browser (GUI)</description>
+  <name>com.io7m.osgibrowse.gui.javafx</name>
+  <description>OSGi browser (JavaFX GUI)</description>
   <url>http://github.com/io7m/osgibrowse</url>
 
   <dependencies>
     <dependency>
-      <groupId>org.swinglabs.swingx</groupId>
-      <artifactId>swingx-core</artifactId>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>com.io7m.osgibrowse.client.api</artifactId>
+      <version>${project.version}</version>
     </dependency>
     <dependency>
-      <groupId>com.miglayout</groupId>
-      <artifactId>miglayout-swing</artifactId>
-    </dependency>
-
-    <dependency>
-      <groupId>biz.aQute.bnd</groupId>
-      <artifactId>biz.aQute.repository</artifactId>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>com.io7m.osgibrowse.client.bnd</artifactId>
+      <version>${project.version}</version>
     </dependency>
 
     <dependency>
-      <groupId>io.reactivex.rxjava2</groupId>
-      <artifactId>rxjava</artifactId>
+      <groupId>com.io7m.junreachable</groupId>
+      <artifactId>com.io7m.junreachable.core</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.openjfx</groupId>
+      <artifactId>javafx-controls</artifactId>
     </dependency>
 
     <dependency>

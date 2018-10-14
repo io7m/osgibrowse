@@ -10,7 +10,7 @@ import com.io7m.osgibrowse.client.api.OBExceptionBundleNotFound;
 import com.io7m.osgibrowse.client.api.OBExceptionRepositoryFailed;
 import com.io7m.osgibrowse.client.api.OBExceptionResolutionFailed;
 import com.io7m.osgibrowse.client.api.OBRepositoryInputType;
-import com.io7m.osgibrowse.client.bnd.OBXMLRepositories;
+import com.io7m.osgibrowse.client.bnd.OBXMLRepositoryLoaders;
 import io.reactivex.Observer;
 import io.reactivex.disposables.Disposable;
 import io.vavr.collection.Vector;
@@ -44,7 +44,7 @@ public abstract class OBClientContract
     final String name)
     throws Exception
   {
-    return OBXMLRepositories.fromURI(resourceURI(name));
+    return new OBXMLRepositoryLoaders().forURI(resourceURI(name)).load();
   }
 
   private static URI resourceURI(

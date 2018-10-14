@@ -17,4 +17,10 @@ public interface OBClientEventRepositoryAddedType extends OBClientEventType
 
   @Value.Parameter
   URI uri();
+
+  @Override
+  default String describe()
+  {
+    return "Added repository " + this.uri();
+  }
 }

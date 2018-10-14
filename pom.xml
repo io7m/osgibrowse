@@ -19,10 +19,10 @@
   <url>http://github.com/io7m/osgibrowse</url>
 
   <modules>
-    <module>com.io7m.osgibrowse.gui</module>
-    <module>com.io7m.osgibrowse.tests</module>
     <module>com.io7m.osgibrowse.client.api</module>
     <module>com.io7m.osgibrowse.client.bnd</module>
+    <module>com.io7m.osgibrowse.gui.javafx</module>
+    <module>com.io7m.osgibrowse.tests</module>
   </modules>
 
   <properties>
@@ -228,6 +228,17 @@
       </dependency>
 
       <dependency>
+        <groupId>com.io7m.junreachable</groupId>
+        <artifactId>com.io7m.junreachable.core</artifactId>
+        <version>2.1.1</version>
+      </dependency>
+      <dependency>
+        <groupId>org.openjfx</groupId>
+        <artifactId>javafx-controls</artifactId>
+        <version>11</version>
+      </dependency>
+
+      <dependency>
         <groupId>org.swinglabs.swingx</groupId>
         <artifactId>swingx-core</artifactId>
         <version>1.6.5-1</version>
@@ -254,14 +265,14 @@
   <build>
     <pluginManagement>
       <plugins>
-        <!-- Require JDK >= 9 -->
+        <!-- Require JDK >= 11 -->
         <plugin>
           <groupId>org.apache.maven.plugins</groupId>
           <artifactId>maven-compiler-plugin</artifactId>
           <configuration>
-            <source>9</source>
-            <target>9</target>
-            <release>9</release>
+            <source>11</source>
+            <target>11</target>
+            <release>11</release>
           </configuration>
         </plugin>
       </plugins>

@@ -8,6 +8,7 @@ import com.io7m.jaffirm.core.Invariants;
 import com.io7m.osgibrowse.client.api.OBBundleIdentifier;
 import com.io7m.osgibrowse.client.api.OBClientEventBundleDeselected;
 import com.io7m.osgibrowse.client.api.OBClientEventBundleSelected;
+import com.io7m.osgibrowse.client.api.OBClientEventRepositoryAddFailed;
 import com.io7m.osgibrowse.client.api.OBClientEventRepositoryAdded;
 import com.io7m.osgibrowse.client.api.OBClientEventRepositoryRemoved;
 import com.io7m.osgibrowse.client.api.OBClientEventType;
@@ -15,6 +16,9 @@ import com.io7m.osgibrowse.client.api.OBClientType;
 import com.io7m.osgibrowse.client.api.OBExceptionBundleNotFound;
 import com.io7m.osgibrowse.client.api.OBExceptionRepositoryFailed;
 import com.io7m.osgibrowse.client.api.OBExceptionResolutionFailed;
+import com.io7m.osgibrowse.client.api.OBRepositoryInputType;
+import com.io7m.osgibrowse.client.api.OBRepositoryLoaderProviderType;
+import com.io7m.osgibrowse.client.api.OBRepositoryLoaderType;
 import com.io7m.osgibrowse.client.api.OBRepositoryType;
 import io.reactivex.Observable;
 import io.reactivex.subjects.BehaviorSubject;
@@ -35,6 +39,7 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -43,18 +48,18 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class OBClient implements OBClientType
 {
   private static final Logger LOG = LoggerFactory.getLogger(OBClient.class);
-
-  private TreeMap<URI, RepositoryWithBundles> repositories;
-  private final BndResolver resolver;
+  private final OBRepositoryLoaderProviderType loaders;
   private final BehaviorSubject<OBClientEventType> subject;
-  private TreeSet<OBBundleIdentifier> selected;
   private final AtomicBoolean closed;
+  private volatile TreeMap<URI, RepositoryWithBundles> repositories;
+  private volatile TreeSet<OBBundleIdentifier> selected;
 
-  OBClient()
+  OBClient(
+    final OBRepositoryLoaderProviderType loaders)
   {
+    this.loaders = Objects.requireNonNull(loaders, "loaders");
     this.repositories = TreeMap.empty();
     this.selected = TreeSet.empty();
-    this.resolver = new BndResolver(new OBResolverLogger(LOG));
     this.subject = BehaviorSubject.create();
     this.closed = new AtomicBoolean(false);
   }
@@ -96,10 +101,52 @@ final class OBClient implements OBClientType
       .build();
   }
 
+  @SuppressWarnings("unchecked")
+  private static <K, VBASE, VSUB extends VBASE> TreeMap<K, VBASE> castMap(
+    final TreeMap<K, VSUB> m)
+  {
+    return (TreeMap<K, VBASE>) m;
+  }
+
   @Override
   public Observable<OBClientEventType> events()
   {
     return this.subject;
+  }
+
+  @Override
+  public void repositoryAdd(final String uri)
+    throws OBExceptionRepositoryFailed
+  {
+    Objects.requireNonNull(uri, "uri");
+
+    final URI t_uri;
+    try {
+      t_uri = new URI(uri);
+    } catch (final URISyntaxException e) {
+      this.subject.onNext(OBClientEventRepositoryAddFailed.of(URI.create("uri:unparseable"), e));
+      throw new OBExceptionRepositoryFailed(e);
+    }
+
+    this.repositoryAdd(t_uri);
+  }
+
+  @Override
+  public void repositoryAdd(final URI uri)
+    throws OBExceptionRepositoryFailed
+  {
+    Objects.requireNonNull(uri, "uri");
+
+    final OBRepositoryInputType loaded;
+    try {
+      final OBRepositoryLoaderType repos = this.loaders.forURI(uri);
+      loaded = repos.load();
+    } catch (final Exception e) {
+      this.subject.onNext(OBClientEventRepositoryAddFailed.of(uri, e));
+      throw new OBExceptionRepositoryFailed(e);
+    }
+
+    this.opRepositoryAdd(loaded.uri(), loaded.repository());
   }
 
   private void opRepositoryAdd(
@@ -107,30 +154,35 @@ final class OBClient implements OBClientType
     final Repository repository)
     throws OBExceptionRepositoryFailed
   {
-    final IdentityExpression req =
-      repository.newRequirementBuilder("osgi.identity")
-        .addAttribute("type", "bundle")
-        .buildExpression();
-
-    final SortedMap<OBBundleIdentifier, Resource> bundles;
     try {
-      bundles =
-        Stream.ofAll(repository.findProviders(req).getValue())
-          .toSortedMap(resource ->
-                         Tuple.of(makeBundleIdentifierForResource(uri, resource), resource));
-    } catch (final InvocationTargetException | InterruptedException e) {
+      final IdentityExpression req =
+        repository.newRequirementBuilder("osgi.identity")
+          .addAttribute("type", "bundle")
+          .buildExpression();
+
+      final SortedMap<OBBundleIdentifier, Resource> bundles;
+      try {
+        bundles =
+          Stream.ofAll(repository.findProviders(req).getValue())
+            .toSortedMap(resource ->
+                           Tuple.of(makeBundleIdentifierForResource(uri, resource), resource));
+      } catch (final InvocationTargetException | InterruptedException e) {
+        throw new OBExceptionRepositoryFailed(e);
+      }
+
+      if (LOG.isDebugEnabled()) {
+        LOG.debug("repository has {} bundles", Integer.valueOf(bundles.size()));
+      }
+
+      final RepositoryWithBundles processed_repository =
+        new RepositoryWithBundles(uri, repository, bundles);
+
+      this.repositories = this.repositories.put(uri, processed_repository);
+      this.subject.onNext(OBClientEventRepositoryAdded.of(uri));
+    } catch (final Exception e) {
+      this.subject.onNext(OBClientEventRepositoryAddFailed.of(uri, e));
       throw new OBExceptionRepositoryFailed(e);
     }
-
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("repository has {} bundles", Integer.valueOf(bundles.size()));
-    }
-
-    final RepositoryWithBundles processed_repository =
-      new RepositoryWithBundles(uri, repository, bundles);
-
-    this.repositories = this.repositories.put(uri, processed_repository);
-    this.subject.onNext(OBClientEventRepositoryAdded.of(uri));
   }
 
   private void opBundleSelectToggle(
@@ -187,6 +239,8 @@ final class OBClient implements OBClientType
     throws OBExceptionResolutionFailed
   {
     try {
+      final BndResolver resolver = new BndResolver(new OBResolverLogger(LOG));
+
       final GenericResolveContext context = new GenericResolveContext(new OBResolverLogger(LOG));
       context.addEE(EE.JavaSE_9_0);
 
@@ -201,17 +255,10 @@ final class OBClient implements OBClientType
 
       context.done();
 
-      return Vector.ofAll(this.resolver.resolve(context).keySet());
+      return Vector.ofAll(resolver.resolve(context).keySet());
     } catch (final Exception e) {
       throw new OBExceptionResolutionFailed(e);
     }
-  }
-
-  @SuppressWarnings("unchecked")
-  private static <K, VBASE, VSUB extends VBASE> TreeMap<K, VBASE> castMap(
-    final TreeMap<K, VSUB> m)
-  {
-    return (TreeMap<K, VBASE>) m;
   }
 
   @Override

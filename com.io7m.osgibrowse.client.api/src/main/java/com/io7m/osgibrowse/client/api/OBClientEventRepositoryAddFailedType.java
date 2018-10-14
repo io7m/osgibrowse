@@ -7,23 +7,31 @@ import java.net.URI;
 
 @Value.Immutable
 @ImmutablesStyleType
-public interface OBClientEventRepositoryRemovedType extends OBClientEventType
+public interface OBClientEventRepositoryAddFailedType extends OBClientEventType
 {
   @Override
   default OBClientEventKind kind()
   {
-    return OBClientEventKind.REPOSITORY_REMOVED;
+    return OBClientEventKind.REPOSITORY_ADD_FAILED;
   }
 
   @Value.Parameter
   URI uri();
 
+  @Value.Parameter
+  Exception exception();
+
   @Override
   default String describe()
   {
+    final Exception ex = this.exception();
     return new StringBuilder(64)
-      .append("Removed repository ")
+      .append("Failed to add repository ")
       .append(this.uri())
+      .append(": ")
+      .append(ex.getClass().getName())
+      .append(": ")
+      .append(ex.getMessage())
       .toString();
   }
 }

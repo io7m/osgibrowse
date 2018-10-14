@@ -17,4 +17,10 @@ public interface OBClientEventBundleSelectedType extends OBClientEventType
 
   @Value.Parameter
   OBBundleIdentifier bundle();
+
+  @Override
+  default String describe()
+  {
+    return "Selected bundle " + this.bundle().toSymbolicString();
+  }
 }

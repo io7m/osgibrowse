@@ -15,4 +15,10 @@ public interface OBClientEventBundleDeselectedType extends OBClientEventType
 
   @Value.Parameter
   OBBundleIdentifier bundle();
+
+  @Override
+  default String describe()
+  {
+    return "Deselected bundle " + this.bundle().toSymbolicString();
+  }
 }
