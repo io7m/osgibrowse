@@ -359,6 +359,14 @@ public abstract class OBClientContract
           .collect(Collectors.toList());
 
       Assertions.assertEquals(1, bundles.size());
+
+      result.forEach(resource -> {
+        resource.getCapabilities("osgi.content").stream().forEach(capability -> {
+          capability.getAttributes().forEach((name, value) -> {
+            this.logger().debug("{} -> {}", name, value);
+          });
+        });
+      });
     }
 
     Assertions.assertTrue(events.complete);

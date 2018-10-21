@@ -60,6 +60,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 final class OBClient implements OBClientType
 {
   private static final Logger LOG = LoggerFactory.getLogger(OBClient.class);
+
   private final OBRepositoryLoaderProviderType loaders;
   private final BehaviorSubject<OBClientEventType> subject;
   private final AtomicBoolean closed;
@@ -128,112 +129,14 @@ final class OBClient implements OBClientType
     return this.subject;
   }
 
-  @Override
-  public void catalogAdd(final String uri)
-    throws OBExceptionCatalogFailed
-  {
-    Objects.requireNonNull(uri, "uri");
-
-    try {
-      this.catalogAdd(new URI(uri));
-    } catch (final URISyntaxException e) {
-      this.subject.onNext(OBClientEventCatalogAddFailed.of(URI.create("urn:unparseable"), e));
-      throw new OBExceptionCatalogFailed(e);
-    }
-  }
-
-  @Override
-  public void catalogAdd(final URI uri)
-    throws OBExceptionCatalogFailed
-  {
-    Objects.requireNonNull(uri, "uri");
-
-    try (OBCatalogParserType parser =
-           this.catalogs.createParser(OBCatalogXMLParserRequest.builder()
-                                        .setFile(uri)
-                                        .setStream(uri.toURL().openStream())
-                                        .build())) {
-
-      final Validation<Seq<OBCatalogParseError>, OBCatalogType> result = parser.parse();
-      if (result.isValid()) {
-        this.catalogAdd(result.get());
-        return;
-      }
-
-      throw new OBExceptionCatalogFailed(result.getError());
-    } catch (final OBCatalogParserConfigurationException | OBExceptionCatalogFailed | IOException e) {
-      this.subject.onNext(OBClientEventCatalogAddFailed.of(uri, e));
-      throw new OBExceptionCatalogFailed(e);
-    }
-  }
-
-  @Override
-  public void catalogAdd(final OBCatalogType catalog)
-    throws OBExceptionCatalogFailed
-  {
-    Objects.requireNonNull(catalog, "catalog");
-
-    OBExceptionCatalogFailed exception = null;
-
-    for (final OBCatalogRepositoryLink repository : catalog.repositories()) {
-      try {
-        this.repositoryAdd(repository.uri());
-      } catch (final OBExceptionRepositoryFailed r_ex) {
-        if (exception == null) {
-          exception = new OBExceptionCatalogFailed(r_ex);
-        } else {
-          exception.addSuppressed(r_ex);
-        }
-      }
-    }
-
-    if (exception != null) {
-      this.subject.onNext(OBClientEventCatalogAddFailed.of(catalog.uri(), exception));
-      throw exception;
-    }
-  }
-
-  @Override
-  public void repositoryAdd(final String uri)
-    throws OBExceptionRepositoryFailed
-  {
-    Objects.requireNonNull(uri, "uri");
-
-    final URI t_uri;
-    try {
-      t_uri = new URI(uri);
-    } catch (final URISyntaxException e) {
-      this.subject.onNext(OBClientEventRepositoryAddFailed.of(URI.create("uri:unparseable"), e));
-      throw new OBExceptionRepositoryFailed(e);
-    }
-
-    this.repositoryAdd(t_uri);
-  }
-
-  @Override
-  public void repositoryAdd(final URI uri)
-    throws OBExceptionRepositoryFailed
-  {
-    Objects.requireNonNull(uri, "uri");
-
-    final OBRepositoryInputType loaded;
-    try {
-      final OBRepositoryLoaderType repos = this.loaders.forURI(uri);
-      loaded = repos.load();
-    } catch (final Exception e) {
-      this.subject.onNext(OBClientEventRepositoryAddFailed.of(uri, e));
-      throw new OBExceptionRepositoryFailed(e);
-    }
-
-    this.opRepositoryAdd(loaded.uri(), loaded.repository());
-  }
-
   private void opRepositoryAdd(
     final URI uri,
     final Repository repository)
     throws OBExceptionRepositoryFailed
   {
     try {
+      LOG.debug("repositoryAdd: {}", uri);
+
       final IdentityExpression req =
         repository.newRequirementBuilder("osgi.identity")
           .addAttribute("type", "bundle")
@@ -338,6 +241,121 @@ final class OBClient implements OBClientType
     } catch (final Exception e) {
       throw new OBExceptionResolutionFailed(e);
     }
+  }
+
+  @Override
+  public void catalogAdd(final String uri)
+    throws OBExceptionCatalogFailed
+  {
+    Objects.requireNonNull(uri, "uri");
+    this.checkNotClosed();
+
+    LOG.debug("catalogAdd: {}", uri);
+
+    try {
+      this.catalogAdd(new URI(uri));
+    } catch (final URISyntaxException e) {
+      this.subject.onNext(OBClientEventCatalogAddFailed.of(URI.create("urn:unparseable"), e));
+      throw new OBExceptionCatalogFailed(e);
+    }
+  }
+
+  @Override
+  public void catalogAdd(final URI uri)
+    throws OBExceptionCatalogFailed
+  {
+    Objects.requireNonNull(uri, "uri");
+    this.checkNotClosed();
+
+    LOG.debug("catalogAdd: {}", uri);
+
+    try (OBCatalogParserType parser =
+           this.catalogs.createParser(OBCatalogXMLParserRequest.builder()
+                                        .setFile(uri)
+                                        .setStream(uri.toURL().openStream())
+                                        .build())) {
+
+      final Validation<Seq<OBCatalogParseError>, OBCatalogType> result = parser.parse();
+      if (result.isValid()) {
+        this.catalogAdd(result.get());
+        return;
+      }
+
+      throw new OBExceptionCatalogFailed(result.getError());
+    } catch (final OBCatalogParserConfigurationException | OBExceptionCatalogFailed | IOException e) {
+      this.subject.onNext(OBClientEventCatalogAddFailed.of(uri, e));
+      throw new OBExceptionCatalogFailed(e);
+    }
+  }
+
+  @Override
+  public void catalogAdd(final OBCatalogType catalog)
+    throws OBExceptionCatalogFailed
+  {
+    Objects.requireNonNull(catalog, "catalog");
+    this.checkNotClosed();
+
+    LOG.debug("catalogAdd: {}", catalog.uri());
+
+    OBExceptionCatalogFailed exception = null;
+
+    for (final OBCatalogRepositoryLink repository : catalog.repositories()) {
+      try {
+        this.repositoryAdd(repository.uri());
+      } catch (final OBExceptionRepositoryFailed r_ex) {
+        if (exception == null) {
+          exception = new OBExceptionCatalogFailed(r_ex);
+        } else {
+          exception.addSuppressed(r_ex);
+        }
+      }
+    }
+
+    if (exception != null) {
+      this.subject.onNext(OBClientEventCatalogAddFailed.of(catalog.uri(), exception));
+      throw exception;
+    }
+  }
+
+  @Override
+  public void repositoryAdd(final String uri)
+    throws OBExceptionRepositoryFailed
+  {
+    Objects.requireNonNull(uri, "uri");
+    this.checkNotClosed();
+
+    LOG.debug("repositoryAdd: {}", uri);
+
+    final URI t_uri;
+    try {
+      t_uri = new URI(uri);
+    } catch (final URISyntaxException e) {
+      this.subject.onNext(OBClientEventRepositoryAddFailed.of(URI.create("uri:unparseable"), e));
+      throw new OBExceptionRepositoryFailed(e);
+    }
+
+    this.repositoryAdd(t_uri);
+  }
+
+  @Override
+  public void repositoryAdd(final URI uri)
+    throws OBExceptionRepositoryFailed
+  {
+    Objects.requireNonNull(uri, "uri");
+    this.checkNotClosed();
+
+    LOG.debug("repositoryAdd: {}", uri);
+
+    final OBRepositoryInputType loaded;
+    try {
+      final OBRepositoryLoaderType repos = this.loaders.forURI(uri);
+      loaded = repos.load();
+    } catch (final Exception e) {
+      this.subject.onNext(OBClientEventRepositoryAddFailed.of(uri, e));
+      throw new OBExceptionRepositoryFailed(e);
+    }
+
+    this.opRepositoryAdd(loaded.uri(), loaded.repository());
   }
 
   @Override
