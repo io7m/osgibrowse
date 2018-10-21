@@ -5,15 +5,24 @@ import aQute.bnd.version.VersionRange;
 import biz.aQute.resolve.BndResolver;
 import biz.aQute.resolve.GenericResolveContext;
 import com.io7m.jaffirm.core.Invariants;
+import com.io7m.osgibrowse.catalog.api.OBCatalogParseError;
+import com.io7m.osgibrowse.catalog.api.OBCatalogParserConfigurationException;
+import com.io7m.osgibrowse.catalog.api.OBCatalogParserType;
+import com.io7m.osgibrowse.catalog.api.OBCatalogRepositoryLink;
+import com.io7m.osgibrowse.catalog.api.OBCatalogType;
+import com.io7m.osgibrowse.catalog.xml.OBCatalogXML;
+import com.io7m.osgibrowse.catalog.xml.OBCatalogXMLParserRequest;
 import com.io7m.osgibrowse.client.api.OBBundleIdentifier;
 import com.io7m.osgibrowse.client.api.OBClientEventBundleDeselected;
 import com.io7m.osgibrowse.client.api.OBClientEventBundleSelected;
+import com.io7m.osgibrowse.client.api.OBClientEventCatalogAddFailed;
 import com.io7m.osgibrowse.client.api.OBClientEventRepositoryAddFailed;
 import com.io7m.osgibrowse.client.api.OBClientEventRepositoryAdded;
 import com.io7m.osgibrowse.client.api.OBClientEventRepositoryRemoved;
 import com.io7m.osgibrowse.client.api.OBClientEventType;
 import com.io7m.osgibrowse.client.api.OBClientType;
 import com.io7m.osgibrowse.client.api.OBExceptionBundleNotFound;
+import com.io7m.osgibrowse.client.api.OBExceptionCatalogFailed;
 import com.io7m.osgibrowse.client.api.OBExceptionRepositoryFailed;
 import com.io7m.osgibrowse.client.api.OBExceptionResolutionFailed;
 import com.io7m.osgibrowse.client.api.OBRepositoryInputType;
@@ -23,12 +32,14 @@ import com.io7m.osgibrowse.client.api.OBRepositoryType;
 import io.reactivex.Observable;
 import io.reactivex.subjects.BehaviorSubject;
 import io.vavr.Tuple;
+import io.vavr.collection.Seq;
 import io.vavr.collection.SortedMap;
 import io.vavr.collection.SortedSet;
 import io.vavr.collection.Stream;
 import io.vavr.collection.TreeMap;
 import io.vavr.collection.TreeSet;
 import io.vavr.collection.Vector;
+import io.vavr.control.Validation;
 import org.osgi.framework.Version;
 import org.osgi.resource.Capability;
 import org.osgi.resource.Resource;
@@ -37,6 +48,7 @@ import org.osgi.service.repository.Repository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -51,12 +63,14 @@ final class OBClient implements OBClientType
   private final OBRepositoryLoaderProviderType loaders;
   private final BehaviorSubject<OBClientEventType> subject;
   private final AtomicBoolean closed;
+  private final OBCatalogXML catalogs;
   private volatile TreeMap<URI, RepositoryWithBundles> repositories;
   private volatile TreeSet<OBBundleIdentifier> selected;
 
   OBClient(
     final OBRepositoryLoaderProviderType loaders)
   {
+    this.catalogs = new OBCatalogXML();
     this.loaders = Objects.requireNonNull(loaders, "loaders");
     this.repositories = TreeMap.empty();
     this.selected = TreeSet.empty();
@@ -112,6 +126,71 @@ final class OBClient implements OBClientType
   public Observable<OBClientEventType> events()
   {
     return this.subject;
+  }
+
+  @Override
+  public void catalogAdd(final String uri)
+    throws OBExceptionCatalogFailed
+  {
+    Objects.requireNonNull(uri, "uri");
+
+    try {
+      this.catalogAdd(new URI(uri));
+    } catch (final URISyntaxException e) {
+      this.subject.onNext(OBClientEventCatalogAddFailed.of(URI.create("urn:unparseable"), e));
+      throw new OBExceptionCatalogFailed(e);
+    }
+  }
+
+  @Override
+  public void catalogAdd(final URI uri)
+    throws OBExceptionCatalogFailed
+  {
+    Objects.requireNonNull(uri, "uri");
+
+    try (OBCatalogParserType parser =
+           this.catalogs.createParser(OBCatalogXMLParserRequest.builder()
+                                        .setFile(uri)
+                                        .setStream(uri.toURL().openStream())
+                                        .build())) {
+
+      final Validation<Seq<OBCatalogParseError>, OBCatalogType> result = parser.parse();
+      if (result.isValid()) {
+        this.catalogAdd(result.get());
+        return;
+      }
+
+      throw new OBExceptionCatalogFailed(result.getError());
+    } catch (final OBCatalogParserConfigurationException | OBExceptionCatalogFailed | IOException e) {
+      this.subject.onNext(OBClientEventCatalogAddFailed.of(uri, e));
+      throw new OBExceptionCatalogFailed(e);
+    }
+  }
+
+  @Override
+  public void catalogAdd(final OBCatalogType catalog)
+    throws OBExceptionCatalogFailed
+  {
+    Objects.requireNonNull(catalog, "catalog");
+
+    OBExceptionCatalogFailed exception = null;
+
+    for (final OBCatalogRepositoryLink repository : catalog.repositories()) {
+      try {
+        this.repositoryAdd(repository.uri());
+      } catch (final OBExceptionRepositoryFailed r_ex) {
+        if (exception == null) {
+          exception = new OBExceptionCatalogFailed(r_ex);
+        } else {
+          exception.addSuppressed(r_ex);
+        }
+      }
+    }
+
+    if (exception != null) {
+      this.subject.onNext(OBClientEventCatalogAddFailed.of(catalog.uri(), exception));
+      throw exception;
+    }
   }
 
   @Override

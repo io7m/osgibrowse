@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<schema elementFormDefault="qualified"
+        attributeFormDefault="unqualified"
+        targetNamespace="osgibrowse:com.io7m.osgibrowse:xml:1.0"
+        xmlns:xml="http://www.w3.org/XML/1998/namespace"
+        xmlns:o="osgibrowse:com.io7m.osgibrowse:xml:1.0"
+        xmlns="http://www.w3.org/2001/XMLSchema">
+
+  <complexType name="repositoryType">
+    <attribute name="url" type="anyURI" use="required"/>
+  </complexType>
+
+  <element
+    name="repository"
+    type="o:repositoryType"/>
+
+  <complexType name="catalogType">
+    <sequence minOccurs="0" maxOccurs="unbounded">
+      <element ref="o:repository"/>
+    </sequence>
+  </complexType>
+
+  <element
+    name="catalog"
+    type="o:catalogType"/>
+
+</schema>

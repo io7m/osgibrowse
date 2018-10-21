@@ -12,9 +12,25 @@ import java.util.Objects;
 
 public final class OBBrowserWindow
 {
-  private OBBrowserWindow()
-  {
+  private final Stage stage;
+  private final MenuBar menu_bar;
+  private final OBTableView table;
+  private final OBStatusBar status_bar;
 
+  private OBBrowserWindow(
+    final Stage in_stage,
+    final MenuBar in_menu_bar,
+    final OBTableView in_table,
+    final OBStatusBar in_status_bar)
+  {
+    this.stage =
+      Objects.requireNonNull(in_stage, "stage");
+    this.menu_bar =
+      Objects.requireNonNull(in_menu_bar, "menu_bar");
+    this.table =
+      Objects.requireNonNull(in_table, "table");
+    this.status_bar =
+      Objects.requireNonNull(in_status_bar, "status_bar");
   }
 
   public static OBBrowserWindow create(
@@ -37,7 +53,7 @@ public final class OBBrowserWindow
 
     stage.setScene(scene);
     stage.show();
-    return new OBBrowserWindow();
+    return new OBBrowserWindow(stage, menu_bar, table, status_bar);
   }
 
   private static MenuBar createMenu(

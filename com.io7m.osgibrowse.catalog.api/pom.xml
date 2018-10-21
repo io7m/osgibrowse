@@ -11,19 +11,13 @@
     <version>0.0.1</version>
   </parent>
 
-  <artifactId>com.io7m.osgibrowse.client.api</artifactId>
+  <artifactId>com.io7m.osgibrowse.catalog.api</artifactId>
 
-  <name>com.io7m.osgibrowse.client.api</name>
-  <description>OSGi browser (Client API)</description>
+  <name>com.io7m.osgibrowse.catalog.api</name>
+  <description>OSGi browser (Catalog API)</description>
   <url>http://github.com/io7m/osgibrowse</url>
 
   <dependencies>
-    <dependency>
-      <groupId>${project.groupId}</groupId>
-      <artifactId>com.io7m.osgibrowse.catalog.api</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-
     <dependency>
       <groupId>org.immutables</groupId>
       <artifactId>value</artifactId>
@@ -35,6 +29,10 @@
       <scope>provided</scope>
     </dependency>
 
+    <dependency>
+      <groupId>com.io7m.jlexing</groupId>
+      <artifactId>com.io7m.jlexing.core</artifactId>
+    </dependency>
     <dependency>
       <groupId>com.io7m.jcip</groupId>
       <artifactId>jcip-annotations</artifactId>

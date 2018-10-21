@@ -2,6 +2,7 @@ package com.io7m.osgibrowse.client.api;
 
 public enum OBClientEventKind
 {
+  CATALOG_ADD_FAILED,
   REPOSITORY_ADDED,
   REPOSITORY_ADD_FAILED,
   REPOSITORY_REMOVED,

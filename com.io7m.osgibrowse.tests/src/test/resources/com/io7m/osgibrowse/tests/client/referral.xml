@@ -1,0 +1,6 @@
+<?xml version='1.0' encoding='utf-8'?>
+<repository increment='0'
+            name='Referral'
+            xmlns='http://www.osgi.org/xmlns/repository/v1.0.0'>
+  <referral url="resource://com/io7m/osgibrowse/tests/client/knoplerfish-6.1.0.xml"/>
+</repository>

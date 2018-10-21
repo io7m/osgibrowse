@@ -23,6 +23,8 @@
     <module>com.io7m.osgibrowse.client.bnd</module>
     <module>com.io7m.osgibrowse.gui.javafx</module>
     <module>com.io7m.osgibrowse.tests</module>
+    <module>com.io7m.osgibrowse.catalog.api</module>
+    <module>com.io7m.osgibrowse.catalog.xml</module>
   </modules>
 
   <properties>
@@ -119,6 +121,12 @@
       </dependency>
 
       <dependency>
+        <groupId>com.io7m.jxe</groupId>
+        <artifactId>com.io7m.jxe.core</artifactId>
+        <version>0.0.1</version>
+      </dependency>
+
+      <dependency>
         <groupId>io.vavr</groupId>
         <artifactId>vavr</artifactId>
         <version>0.9.2</version>
@@ -136,6 +144,16 @@
         <version>1.0.2</version>
       </dependency>
 
+      <dependency>
+        <groupId>com.io7m.jlexing</groupId>
+        <artifactId>com.io7m.jlexing.core</artifactId>
+        <version>2.0.0</version>
+      </dependency>
+      <dependency>
+        <groupId>com.io7m.junreachable</groupId>
+        <artifactId>com.io7m.junreachable.core</artifactId>
+        <version>2.1.1</version>
+      </dependency>
       <dependency>
         <groupId>com.io7m.jaffirm</groupId>
         <artifactId>com.io7m.jaffirm.core</artifactId>
@@ -227,11 +245,6 @@
         <version>${com.io7m.osgibrowse.org.apache.felix.log.version}</version>
       </dependency>
 
-      <dependency>
-        <groupId>com.io7m.junreachable</groupId>
-        <artifactId>com.io7m.junreachable.core</artifactId>
-        <version>2.1.1</version>
-      </dependency>
       <dependency>
         <groupId>org.openjfx</groupId>
         <artifactId>javafx-controls</artifactId>

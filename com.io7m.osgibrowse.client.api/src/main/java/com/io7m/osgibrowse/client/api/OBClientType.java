@@ -1,5 +1,6 @@
 package com.io7m.osgibrowse.client.api;
 
+import com.io7m.osgibrowse.catalog.api.OBCatalogType;
 import io.reactivex.Observable;
 import io.vavr.collection.SortedMap;
 import io.vavr.collection.SortedSet;
@@ -14,6 +15,15 @@ import java.util.Objects;
 public interface OBClientType extends Closeable
 {
   Observable<OBClientEventType> events();
+
+  void catalogAdd(String uri)
+    throws OBExceptionCatalogFailed;
+
+  void catalogAdd(URI uri)
+    throws OBExceptionCatalogFailed;
+
+  void catalogAdd(OBCatalogType catalog)
+    throws OBExceptionCatalogFailed;
 
   void repositoryAdd(
     String uri)

@@ -15,6 +15,7 @@ import io.reactivex.Observer;
 import io.reactivex.disposables.Disposable;
 import io.vavr.collection.Vector;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.osgi.framework.Version;
@@ -29,6 +30,7 @@ import org.slf4j.Logger;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -40,11 +42,18 @@ import static org.osgi.framework.Version.parseVersion;
 
 public abstract class OBClientContract
 {
+  @BeforeAll
+  public static void setupOnce()
+  {
+    URL.setURLStreamHandlerFactory(new ResourceURLHandlers());
+  }
+
   private static OBRepositoryInputType xmlRepository(
     final String name)
     throws Exception
   {
-    return new OBXMLRepositoryLoaders().forURI(resourceURI(name)).load();
+    final URI uri = resourceURI(name);
+    return new OBXMLRepositoryLoaders().forURI(uri).load();
   }
 
   private static URI resourceURI(
@@ -203,6 +212,31 @@ public abstract class OBClientContract
   }
 
   @Test
+  public final void testRepositoryAddReferralOK()
+    throws Exception
+  {
+    final OBClientProviderType clients = this.clients();
+    final LoggingEventReceiver events = new LoggingEventReceiver(this.logger());
+
+    try (OBClientType client = clients.createEmptyClient()) {
+      client.events().subscribe(events);
+
+      final OBRepositoryInputType repos = xmlRepository("referral.xml");
+
+      client.repositoryAdd(repos);
+
+      Assertions.assertTrue(client.repositoryList().containsKey(repos.uri()));
+
+      Assertions.assertEquals(1, events.events.size());
+      Assertions.assertEquals(
+        OBClientEventRepositoryAdded.of(resourceURI("referral.xml")),
+        events.events.get(0));
+    }
+
+    Assertions.assertTrue(events.complete);
+  }
+
+  @Test
   public final void testBundleSelectOK()
     throws Exception
   {
@@ -355,6 +389,33 @@ public abstract class OBClientContract
       client.bundleSelectToggle(bundle);
 
       Assertions.assertThrows(OBExceptionResolutionFailed.class, client::bundlesResolved);
+    }
+
+    Assertions.assertTrue(events.complete);
+  }
+
+  @Test
+  public final void testCatalogAddOK()
+    throws Exception
+  {
+    final OBClientProviderType clients = this.clients();
+    final LoggingEventReceiver events = new LoggingEventReceiver(this.logger());
+
+    try (OBClientType client = clients.createEmptyClient()) {
+      client.events().subscribe(events);
+
+      final URI catalog = resourceURI("catalog-0.xml");
+
+      client.catalogAdd(catalog);
+
+      final URI repos_uri =
+        URI.create("resource://com/io7m/osgibrowse/tests/client/knoplerfish-6.1.0.xml");
+
+      Assertions.assertTrue(client.repositoryList().containsKey(repos_uri));
+      Assertions.assertEquals(1, events.events.size());
+      Assertions.assertEquals(
+        OBClientEventRepositoryAdded.of(repos_uri),
+        events.events.get(0));
     }
 
     Assertions.assertTrue(events.complete);
