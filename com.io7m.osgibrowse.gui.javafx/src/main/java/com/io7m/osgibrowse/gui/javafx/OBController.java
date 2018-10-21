@@ -3,6 +3,7 @@ package com.io7m.osgibrowse.gui.javafx;
 import com.io7m.osgibrowse.client.api.OBBundleIdentifier;
 import com.io7m.osgibrowse.client.api.OBClientType;
 import com.io7m.osgibrowse.client.api.OBExceptionBundleNotFound;
+import com.io7m.osgibrowse.client.api.OBExceptionCatalogFailed;
 import com.io7m.osgibrowse.client.api.OBRepositoryType;
 import com.io7m.osgibrowse.client.bnd.OBClients;
 import io.reactivex.Observable;
@@ -61,6 +62,16 @@ public final class OBController
     return this.client.repositoryList().get(uri).get();
   }
 
+  private Void opCatalogAdd(
+    final String uri_text)
+    throws Exception
+  {
+    this.events.onNext(OBGuiEventRepositoryAdding.of(uri_text));
+    this.client.catalogAdd(uri_text);
+    final URI uri = URI.create(uri_text);
+    return null;
+  }
+
   public CompletableFuture<Tuple2<
     SortedSet<OBBundleIdentifier>,
     SortedMap<URI, OBRepositoryType>>> repositoryList()
@@ -106,6 +117,12 @@ public final class OBController
     final String uri)
   {
     return this.submit(() -> this.opRepositoryAdd(uri));
+  }
+
+  public CompletableFuture<Void> catalogAdd(
+    final String uri)
+  {
+    return this.submit(() -> this.opCatalogAdd(uri));
   }
 
   public CompletableFuture<SortedSet<OBBundleIdentifier>> bundleSelect(

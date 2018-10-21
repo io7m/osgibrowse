@@ -52,7 +52,16 @@ public final class OBTableView
       result.ifPresent(controller::repositoryAdd);
     });
 
-    return new ContextMenu(add_repos);
+    final MenuItem add_catalog =
+      new MenuItem("Add catalog…", OBImages.imageViewOf("root.png"));
+
+    add_catalog.setOnAction(event -> {
+      final OBDialogCatalogAdd dialog = OBDialogCatalogAdd.create();
+      final Optional<String> result = dialog.dialog().showAndWait();
+      result.ifPresent(controller::catalogAdd);
+    });
+
+    return new ContextMenu(add_repos, add_catalog);
   }
 
   /**
